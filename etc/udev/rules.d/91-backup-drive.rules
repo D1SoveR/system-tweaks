@@ -1,0 +1,5 @@
+# This files sets up the udev rule to manage the external backup drive;
+# it creates a fixed device symlink to ensure it's always available regardless of device ordering,
+# and launches the automatic decryption and mounting of the backup partition
+
+KERNEL=="sd*", ENV{DEVTYPE}=="partition", ENV{ID_BUS}=="usb", ENV{ID_MODEL_ID}=="25a2", ENV{ID_REVISION}=="1014", SYMLINK+="disk/backup-drive", ENV{SYSTEMD_WANTS}="mnt-backup-decrypted.mount"
