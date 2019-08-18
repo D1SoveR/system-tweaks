@@ -83,7 +83,7 @@ unmount/close).
 		if not len(sys.argv) > 3:
 			raise RuntimeError("Need to provide ZFS item name")
 
-		zfs_items = run("zfs list -H -t all -o name", stdout=PIPE, encoding="utf8").stdout.splitlines()
+		zfs_items = run(["zfs", "list", "-H", "-t", "all", "-o", "name"], stdout=PIPE, encoding="utf8").stdout.splitlines()
 		if sys.argv[3] in zfs_items:
 			device = sys.argv[3]
 		else:
@@ -131,6 +131,14 @@ unmount/close).
 
 	if command_type == "encrypt":
 
+		def zfs_unload(device):
+			try:
+				pr = run(["zfs", "unload-key", device], check=True, stdout=PIPE, stderr=PIPE, encoding="utf8")
+			except CalledProcessError as e:
+				if "is busy" in e.stdout or "is busy" in e.stderr:
+					raise TargetBusyError()
+				raise e
+
 		def cryptsetup_close(mountpoint):
 			try:
 				pr = run(["cryptsetup", "close", mountpoint], check=True, stdout=PIPE, stderr=PIPE)
@@ -140,7 +148,17 @@ unmount/close).
 				raise e
 
 		if fs_type == "zfs":
-			raise NotImplementedError("Encrypting zfs to be done")
+			for _ in range(60 if daemonic else 1):
+				try:
+					zfs_unload(device)
+				except TargetBusyError:
+					if daemonic:
+						sleep(1)
+					else:
+						print("Cannot unload key from ZFS device, device still busy; will attempt in fork...", file=sys.stderr)
+						detach_cmd()
+				except CalledProcessError as e:
+					process_output(e)
 		elif fs_type == "luks":
 			for _ in range(60 if daemonic else 1):
 				try:

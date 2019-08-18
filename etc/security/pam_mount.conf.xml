@@ -16,13 +16,13 @@
 	the mountpoints still being busy couple of seconds after the logout;
 	it uses atd to schedule unmounting/closing of LUKS containers out-of-band
 	as soon as they are available for such operation -->
-	<cryptmount>pam-mount-helper decrypt luks %(VOLUME) %(MNTPT)</cryptmount>
-	<cryptumount>pam-mount-helper encrypt luks %(MNTPT)</cryptumount>
-	<lclmount>pam-mount-helper mount %(FSTYPE) %(VOLUME) %(MNTPT)</lclmount>
+	<cryptmount>pam-mount-helper decrypt zfs %(VOLUME)</cryptmount>
+	<cryptumount>pam-mount-helper encrypt zfs %(VOLUME)</cryptumount>
+	<lclmount>pam-mount-helper mount %(FSTYPE) %(VOLUME)</lclmount>
 	<umount>pam-mount-helper unmount %(FSTYPE) %(VOLUME)</umount>
 
-	<volume user="lilith" fstype="crypt" path="/home/%(USER)-encrypted.img" mountpoint="%(USER)-home" />
-	<volume user="lilith" fstype="auto" path="/dev/mapper/%(USER)-home" mountpoint="/home/%(USER)" />
+	<volume user="lilith" fstype="crypt" path="d1sover-home/%(USER)" mountpoint="~" />
+	<volume user="lilith" fstype="zfs" path="d1sover-home/%(USER)" mountpoint="/home/%(USER)" />
 
 	<!-- pam_mount parameters: General tunables -->
 
