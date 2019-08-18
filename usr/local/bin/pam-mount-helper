@@ -1,0 +1,191 @@
+#!/usr/bin/env python3
+
+from subprocess import Popen, run, CalledProcessError, PIPE
+import sys
+from time import sleep
+
+class TargetBusyError(Exception):
+	"""
+	Exception class used to indicate that the target of the encrypting/unmounting
+	operation is still in use and thus cannot be encrypted/unmounted.
+	"""
+	pass
+
+def process_output(obj):
+	print(obj.stdout, file=sys.stdout, end="")
+	print(obj.stderr, file=sys.stderr, end="")
+	exit(obj.returncode)
+
+def detach_cmd():
+
+	new_arguments = [sys.argv[0], "--daemon"] + sys.argv[1:]
+	at_input = "sleep 5; {0}".format(" ".join(new_arguments))
+	process = Popen(["at", "now"], stdin=PIPE, stdout=PIPE, stderr=PIPE, cwd="/", encoding="utf8")
+	process.communicate(at_input)
+	process.wait()
+
+	if process.returncode != 0:
+		process_output(process)
+
+if __name__ == "__main__":
+
+	# === COMMAND LINE PROCESSING ===
+
+	if len(sys.argv) <= 1 or "--help" in sys.argv or "-h" in sys.argv:
+		print("""
+Usage: {0} decrypt zfs [zfs item]
+       {0} decrypt luks [device] [mapper-device]
+       {0} encrypt zfs [zfs item]
+       {0} encrypt luks [mapper-device]
+       {0} mount   zfs [zfs item]
+       {0} mount   [fs-type] [device] [?mountpoint]
+       {0} unmount zfs [zfs item]
+       {0} unmount [fs-type] [device]
+
+This script wraps the use of several cryptsetup/mount/zfs commands
+for use with pam_mount plugin for (un)mounting encrypted volumes for users.
+With couple of parameters given regarding the crypto/mount, it will invoke
+the appropriate commands and decrypt the device and mount it, or close it
+correctly.
+
+It has some improvements over using the commands directly in pam_mount config;
+it allows for mixed crypto setup (pam_mount config allows for only one type
+of command to be defined at a time), and it blocks until the device that needs to be
+unmounted or closed is no longer busy (pam_mount simply ignores devices it cannot
+unmount/close).
+		""".format(sys.argv[0]))
+		exit(0)
+
+	# Mark that the command has been used as fork-like
+	# (executed from atd, when the unmounting could not be done at logout)
+	if sys.argv[1] == "--daemon":
+		daemonic = True
+		sys.argv.pop(1)
+	else:
+		daemonic = False
+
+	# Command handling
+	if sys.argv[1] not in ["decrypt", "encrypt", "mount", "unmount"]:
+		raise RuntimeError("Command needs to be one of: decrypt, encrypt, mount, unmount (was {0})".format(sys.argv[1]))
+	command_type = sys.argv[1]
+
+	# Filesystem type handling
+	if command_type in ["decrypt", "encrypt"] and sys.argv[2] not in ["luks", "zfs"]:
+		raise RuntimeError("For crypto operations, crypto type needs to be one of: luks, zfs (was {0})".format(sys.argv[2]))
+	if len(sys.argv) > 2:
+		fs_type = sys.argv[2]
+	else:
+		raise RuntimeError("Need to provide filesystem type")
+
+	# Device & mountpoint handling
+	if fs_type == "zfs":
+
+		if not len(sys.argv) > 3:
+			raise RuntimeError("Need to provide ZFS item name")
+
+		zfs_items = run("zfs list -H -t all -o name", stdout=PIPE, encoding="utf8").stdout.splitlines()
+		if sys.argv[3] in zfs_items:
+			device = sys.argv[3]
+		else:
+			raise RuntimeError("Could not find given device (given {0})".format(sys.argv[3]))
+
+	elif command_type == "decrypt" and fs_type == "luks":
+
+		if len(sys.argv) > 4:
+			device = sys.argv[3]
+			mountpoint = sys.argv[4][12:] if sys.argv[4].startswith("/dev/mapper/") else sys.argv[4]
+		else:
+			raise RuntimeError("Need to provide both device and mapping name for opening LUKS container")
+
+	elif command_type == "encrypt" and fs_type == "luks":
+
+		if len(sys.argv) > 3:
+			mountpoint = sys.argv[3] if sys.argv[3].startswith("/dev/mapper/") else "/dev/mapper/{0}".format(sys.argv[3])
+		else:
+			raise RuntimeError("Need to provide mapper device for closing LUKS container")
+
+	elif command_type == "mount":
+
+		if len(sys.argv) > 3:
+			device = sys.argv[3]
+			if len(sys.argv) > 4:
+				mountpoint = sys.argv[4]
+		else:
+			raise RuntimeError("Need to provide at least device to mount")
+
+	elif command_type == "unmount":
+
+		if len(sys.argv) > 3:
+			device = sys.argv[3]
+		else:
+			raise RuntimeError("Need to provide either device or mount point for unmounting")
+
+	# === COMMAND EXECUTION ===
+
+	# Decrypting/opening containers/loading keys
+	if command_type == "decrypt":
+
+		args = ["zfs", "load-key", device] if fs_type == "zfs" else ["cryptsetup", "open", device, mountpoint]
+		pr = run(args)
+		exit(pr.returncode)
+
+	if command_type == "encrypt":
+
+		def cryptsetup_close(mountpoint):
+			try:
+				pr = run(["cryptsetup", "close", mountpoint], check=True, stdout=PIPE, stderr=PIPE)
+			except CalledProcessError as e:
+				if e.returncode == 5:
+					raise TargetBusyError()
+				raise e
+
+		if fs_type == "zfs":
+			raise NotImplementedError("Encrypting zfs to be done")
+		elif fs_type == "luks":
+			for _ in range(60 if daemonic else 1):
+				try:
+					cryptsetup_close(mountpoint)
+				except TargetBusyError:
+					if daemonic:
+						sleep(1)
+					else:
+						print("Cannot close LUKS container, device still busy; will attempt in fork...", file=sys.stderr)
+						detach_cmd()
+				except CalledProcessError as e:
+					process_output(e)
+
+	if command_type == "mount":
+
+		if fs_type == "zfs":
+			pr = run(["zfs", "mount", device])
+			exit(pr.returncode)
+		else:
+			args = ["mount", "-t", fs_type, device]
+			if mountpoint:
+				args.append(mountpoint)
+			pr = run(args)
+			exit(pr.returncode)
+
+	if command_type == "unmount":
+
+		def unmount(cmd_line):
+			try:
+				run(cmd_line, check=True, stdout=PIPE, stderr=PIPE, encoding="utf8")
+			except CalledProcessError as e:
+				if "target is busy" in e.stdout or "target is busy" in e.stderr:
+					raise TargetBusyError()
+				raise e
+
+		args = ["zfs", "unmount", device] if fs_type == "zfs" else ["umount", device]
+
+		for _ in range(60 if daemonic else 1):
+			try:
+				unmount(args)
+			except TargetBusyError:
+				if daemonic:
+					sleep(1)
+				else:
+					print("Cannot unmount, device still busy; will attempt in fork...", file=sys.stderr)
+					detach_cmd()
+			except CalledProcessError as e:
+				process_output(e)
