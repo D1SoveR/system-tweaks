@@ -1,0 +1,22 @@
+[Unit]
+Description=Local HTTP server
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/servy --host 0.0.0.0 --port 9001 --verbose .
+WorkingDirectory=/var/www
+User=http
+Group=http
+
+# Ensure it doesn't block regular system operation or system shutdown
+RestartSec=5
+TimeoutStopSec=5
+Nice=15
+
+# Ensure that the process is fully secure
+ProtectSystem=strict
+ProtectHome=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=network-online.target
