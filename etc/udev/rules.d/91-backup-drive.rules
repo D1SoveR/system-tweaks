@@ -2,4 +2,4 @@
 # it creates a fixed device symlink to ensure it's always available regardless of device ordering,
 # and launches the automatic decryption and mounting of the backup partition
 
-KERNEL=="sd*", ENV{DEVTYPE}=="partition", ENV{ID_BUS}=="usb", ENV{ID_MODEL_ID}=="25a2", ENV{ID_REVISION}=="1014", SYMLINK+="disk/backup-drive", ENV{SYSTEMD_WANTS}="mnt-backup-decrypted.mount"
+KERNEL=="sd*", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", ENV{ID_VENDOR_ID}=="1058", ENV{ID_MODEL_ID}=="25a2", ENV{SYSTEMD_WANTS}="systemd-cryptsetup@backup.service"
