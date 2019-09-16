@@ -1,0 +1,10 @@
+[Unit]
+Description=Backup latest version of LUKS containers every week
+
+[Timer]
+OnCalendar=Mon *-*-* 02:00:00
+AccuracySec=1h
+Persistent=yes
+
+[Install]
+WantedBy=timers.target

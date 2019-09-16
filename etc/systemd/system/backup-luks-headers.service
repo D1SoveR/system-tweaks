@@ -1,0 +1,7 @@
+[Unit]
+Description=Creates backup copies of headers for every LUKS container available to the system
+ConditionPathIsDirectory=/mnt/backup/LUKS
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/backup-luks-headers /mnt/backup/LUKS

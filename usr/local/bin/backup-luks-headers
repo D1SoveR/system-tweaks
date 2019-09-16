@@ -1,0 +1,24 @@
+#!/bin/bash
+# Quick script thrown together to automatically back up headers of all the LUKS containers
+# currently available to the system to the given directory.
+
+BACKUP_ROOT="$1"
+if [ ! -d "$BACKUP_ROOT" ]; then
+	echo "No backup root was provided" 1>&2
+	exit 1
+fi
+
+# Get an array of interspeded device name and its UUID, like dev, uuid, dev, uuid, dev, uuid...
+DEVICES=( $(lsblk -no PATH,UUID,FSTYPE | awk '{ if ($3 == "crypto_LUKS") { print $1, $2 } }') )
+
+# Going over the array two at a time since the evens contain device names, and odds contain UUIDs
+for (( i=0; i<10; i+=2 )); do
+
+	DEVICE_PATH="${DEVICES[$i]}"
+	BACKUP_PATH="$BACKUP_ROOT/${DEVICES[$((i+1))]}.header"
+	if [ -f "$BACKUP_PATH" ]; then rm "$BACKUP_PATH"; fi
+
+	echo "Backing up LUKS header of device $DEVICE_PATH to $BACKUP_PATH..."
+	cryptsetup luksHeaderBackup "$DEVICE_PATH" --header-backup-file="$BACKUP_PATH"
+
+done
