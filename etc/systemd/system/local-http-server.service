@@ -1,5 +1,6 @@
 [Unit]
 Description=Local HTTP server
+After=network.target
 
 [Service]
 Type=simple
@@ -16,7 +17,10 @@ Nice=15
 # Ensure that the process is fully secure
 ProtectSystem=strict
 ProtectHome=yes
+PrivateTmp=true
+SystemCallArchitectures=native
+MemoryDenyWriteExecute=true
 NoNewPrivileges=yes
 
 [Install]
-WantedBy=network-online.target
+WantedBy=multi-user.target

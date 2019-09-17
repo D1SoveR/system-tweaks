@@ -1,0 +1,16 @@
+#!/bin/bash
+
+BACKUP_ROOT="$1"
+if [ ! -d "$BACKUP_ROOT" ]; then
+	echo "No backup root was provided" 1>&2
+	exit 1
+fi
+
+echo "Backing up list of all explicitly installed packages..."
+pacman -Qqen | sort > "$BACKUP_ROOT/explicit.pkg"
+echo "Backing up list of all optional dependencies..."
+comm -13 <(pacman -Qqdnt | sort) <(pacman -Qqdntt | sort) > "$BACKUP_ROOT/optional.pkg"
+echo "Backing up list of all AUR/custom packages..."
+pacman -Qqem | sort > "$BACKUP_ROOT/aur.pkg"
+echo "Backing up list of all AUR/custom dependencies..."
+comm -13 <(pacman -Qqdmt | sort) <(pacman -Qqdmtt | sort) > "$BACKUP_ROOT/aur_optional.pkg"

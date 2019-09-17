@@ -1,7 +1,10 @@
 [Unit]
 Description=Creates backup copies of headers for every LUKS container available to the system
+ConditionPathIsMountPoint=/mnt/backup
 ConditionPathIsDirectory=/mnt/backup/LUKS
 
 [Service]
-Type=simple
+Type=oneshot
+UMask=0177
 ExecStart=/usr/local/bin/backup-luks-headers /mnt/backup/LUKS
+ExecStartPost=/usr/bin/chown -R backup:backup /mnt/backup/LUKS

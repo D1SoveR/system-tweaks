@@ -1,0 +1,11 @@
+[Unit]
+Description=Creates backup lists of all the packages installed on the system
+ConditionPathIsMountPoint=/mnt/backup
+ConditionPathIsDirectory=/mnt/backup/packages
+
+[Service]
+Type=oneshot
+User=backup
+Group=backup
+UMask=0177
+ExecStart=/usr/local/bin/backup-pkg-list /mnt/backup/packages

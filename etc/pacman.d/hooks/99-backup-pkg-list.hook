@@ -1,0 +1,15 @@
+# This hook ensures that we always have the current package lists backed up in case we need to recover the system state.
+# Uses systemd unit instead of invoking the script directly for some extras, such as easy umask, privilege dropping on execution,
+# and built-in conditionals for checking that the removable backup drive is plugged in.
+
+[Trigger]
+Operation = Install
+Operation = Upgrade
+Operation = Remove
+Type = Package
+Target = *
+
+[Action]
+Description = Backing up list of installed packages...
+When = PostTransaction
+Exec = /usr/bin/systemctl start backup-pkg-list.service
