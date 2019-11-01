@@ -1,5 +1,5 @@
 # This files sets up the udev rule to manage the external backup drive;
-# it creates a fixed device symlink to ensure it's always available regardless of device ordering,
-# and launches the automatic decryption and mounting of the backup partition
+# it launches the systemd unit responsible for decrypting the drive, created from /etc/crypttab,
+# and set up to also automatically mount the drive at its set location (/mnt/backup) as soon as possible.
 
 KERNEL=="sd*", ENV{DEVTYPE}=="disk", ENV{ID_BUS}=="usb", ENV{ID_VENDOR_ID}=="1058", ENV{ID_MODEL_ID}=="25a2", ENV{SYSTEMD_WANTS}="systemd-cryptsetup@backup.service"
