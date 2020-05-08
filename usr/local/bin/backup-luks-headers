@@ -12,7 +12,7 @@ fi
 DEVICES=( $(lsblk -no PATH,UUID,FSTYPE | awk '{ if ($3 == "crypto_LUKS") { print $1, $2 } }') )
 
 # Going over the array two at a time since the evens contain device names, and odds contain UUIDs
-for (( i=0; i<10; i+=2 )); do
+for (( i=0; i<${#DEVICES[@]}; i+=2 )); do
 
 	DEVICE_PATH="${DEVICES[$i]}"
 	BACKUP_PATH="$BACKUP_ROOT/${DEVICES[$((i+1))]}.header"
