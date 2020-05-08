@@ -1,0 +1,7 @@
+# set scheduler for non-rotating disks
+# noop and deadline are recommended for non-rotating disks
+ACTION=="add|change", KERNEL=="nvme[0-9]*", ATTR{queue/scheduler}="none"
+ACTION=="add|change", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}="deadline"
+# set scheduler for rotating disks
+# for rotational disks, cfq gives better performance and bfq-sq more responsive desktop environment
+ACTION=="add|change", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}="bfq-sq"

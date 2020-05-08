@@ -1,7 +1,0 @@
-# These rules for determining best I/O scheduler have been lifted from Arch Wiki on performance improvement:
-# https://wiki.archlinux.org/index.php/Improving_performance#Changing_I/O_scheduler
-
-# set scheduler for SSD and eMMC
-ACTION=="add|change", KERNEL=="sd[a-z]|mmcblk[0-9]*", ATTR{queue/rotational}=="0", ATTR{queue/scheduler}="mq-deadline"
-# set scheduler for rotating disks
-ACTION=="add|change", KERNEL=="sd[a-z]", ATTR{queue/rotational}=="1", ATTR{queue/scheduler}="bfq"
