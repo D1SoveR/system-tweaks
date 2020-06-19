@@ -1,0 +1,8 @@
+[Unit]
+Description=Starts the scrub process on my home ZFS pool
+Requires=zfs-import.target
+After=zfs-import.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/zpool scrub d1sover-home

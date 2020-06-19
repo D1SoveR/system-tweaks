@@ -1,0 +1,10 @@
+[Unit]
+Description=Start scrub of my local ZFS pool once a month
+
+[Timer]
+OnCalendar=monthly
+AccuracySec=6h
+Persistent=true
+
+[Install]
+WantedBy=timers.target
