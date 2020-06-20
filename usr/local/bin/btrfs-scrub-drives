@@ -1,0 +1,71 @@
+#!/usr/bin/env python3
+
+import sys
+from collections import defaultdict
+from io import StringIO
+from subprocess import Popen, PIPE
+from time import sleep
+from urllib.request import Request, urlopen
+
+HEALTHCHECKS_URL = "https://hc-ping.com/d87ed414-f51e-4dc2-a8d8-ae74f3b447df"
+
+def send_ping(url, payload=None):
+	print("Sending following payload: ", payload)
+	if payload:
+		payload = payload.encode("utf8")
+		req = Request(url, data=payload, headers={ "Content-Type": "text/plain; charset=utf-8", "Content-Length": len(payload) }, method="POST")
+	else:
+		req = Request(url, method="GET")
+	try:
+		urlopen(req, timeout=5)
+	except Exception as e:
+		print("Error occurred while sending ping to {0}:\n{1}".format(url, e), file=sys.stderr)
+
+def print_and_save(*args, dest):
+	print(*args)
+	print(*args, file=dest)
+
+if __name__ == "__main__":
+
+	print("Getting list of btrfs filesystems to scrub...")
+
+	filesystems = defaultdict(list)
+	with open("/proc/mounts", mode="rt", encoding="utf8") as fp:
+		for line in fp.readlines():
+			(device, mountpoint, fs) = line.strip().split(" ")[:3]
+			if fs == "btrfs":
+				filesystems[device].append(mountpoint)
+	filesystems = { k: min(v) for k, v in filesystems.items() }
+
+	start_summary = StringIO()
+	print_and_save("Will scrub following devices:", dest=start_summary)
+	for key in filesystems.keys():
+		print_and_save(" * {0}".format(key), dest=start_summary)
+
+	print("\nSending starting ping to healthchecks.io...")
+	send_ping("{0}/start".format(HEALTHCHECKS_URL), start_summary.getvalue().strip())
+
+	print("Starting btrfs scrub...\n")
+	processes = { k: Popen(["/usr/bin/btrfs", "scrub", "start", "-B", v], shell=False, stdout=PIPE, stderr=sys.stderr, encoding="utf8") for k, v in filesystems.items() }
+	outputs = { k: "" for k in filesystems.keys() }
+
+	# Monitor all the processes and gather their output
+	while not all(map(lambda x: x.poll() is not None, processes.values())):
+		for device, process in processes.items():
+			outputs[device] += process.communicate()[0]
+		sleep(5)
+
+	# Summarise scrub results
+	summary = StringIO()
+	success = all(map(lambda x: x.returncode == 0, processes.values()))
+
+	if success:
+		print_and_save("Scrub of all btrfs drives has completed successfully.\n", dest=summary)
+	else:
+		print_and_save("Errors have been found when scrubbing btrfs drives.\n", dest=summary)
+
+	for device, output in outputs.items():
+		print_and_save("Summary for '{0}' (finished with return code of {2}):\n{1}".format(device, output, processes[device].returncode), dest=summary)
+
+	print("Sending ending ping to healthchecks.io...")
+	send_ping("{0}{1}".format(HEALTHCHECKS_URL, "/fail" if not success else ""), summary.getvalue().strip())
