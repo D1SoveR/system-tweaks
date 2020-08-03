@@ -1,0 +1,126 @@
+#!/usr/bin/env python3
+
+from io import StringIO
+import re
+from subprocess import check_output, DEVNULL, PIPE, Popen
+import sys
+from time import sleep
+from traceback import print_exception
+from urllib.request import Request, urlopen
+
+HEALTHCHECKS_URL = "https://hc-ping.com/ac6ab180-5d29-4275-9e3f-782fa85435ce"
+
+def print_and_save(*args, dest):
+    print(*args)
+    print(*args, file=dest)
+
+def get_used_and_free(fs):
+    output = check_output(["/usr/bin/btrfs", "filesystem", "usage", fs], stderr=DEVNULL, shell=False, encoding="utf8")
+    match_used = re.search(r"Used:\s+(\d+(?:\.\d+)[KMGT]?i?B)", output)
+    match_free = re.search(r"Free \(estimated\):\s+(\d+(?:\.\d+)[KMGT]?i?B)", output)
+    return { "used": match_used.group(1), "free": match_free.group(1) }
+
+def send_ping(url, payload=None):
+    if payload:
+        payload = payload.encode("utf8")
+        req = Request(url, data=payload, headers={ "Content-Type": "text/plain; charset=utf-8", "Content-Length": len(payload) }, method="POST")
+    else:
+        req = Request(url, method="GET")
+    try:
+        urlopen(req, timeout=5)
+    except Exception as e:
+        print("Error occurred while sending ping to {0}:\n{1}".format(url, e), file=sys.stderr)
+
+if __name__ == "__main__":
+
+    print("Getting list of btrfs filesystems to defragment and deduplicate...")
+
+    filesystems = []
+    with open("/proc/mounts", mode="rt", encoding="utf8") as fp:
+        for line in fp.readlines():
+            (device, mountpoint, fs) = line.strip().split(" ")[:3]
+            if fs == "btrfs" and device != "/dev/mapper/root":
+                filesystems.append(mountpoint)
+    filesystems.sort(key=len)
+
+    start_summary = StringIO()
+    print_and_save("Will defragment and deduplicate following devices:", dest=start_summary)
+    for value in filesystems:
+            print_and_save(" * {0}".format(value), dest=start_summary)
+
+    raise Exception("Eg")
+
+    print("\nSending starting ping to healthchecks.io...")
+    send_ping("{0}/start".format(HEALTHCHECKS_URL), start_summary.getvalue().strip())
+
+    try:
+
+        print("Collecting filesystem usage before the process...")
+        usage_before = { k: get_used_and_free(k) for k in filesystems }
+        usage_after = {}
+
+        print("Starting defragmentation...")
+        processes_defrag = { fs: Popen(["/usr/bin/btrfs", "filesystem", "defragment", "-rf", fs], shell=False, stdout=DEVNULL, stderr=PIPE, encoding="utf8") for fs in filesystems }
+        processes_dedupe = {}
+        error_outputs = { fs: "" for fs in filesystems }
+
+        while True:
+            continue_running = False
+            for fs in filesystems:
+
+                retcode = processes_defrag[fs].poll()
+                if retcode is None:
+                    continue_running = True
+                elif retcode > 0:
+                    if len(error_outputs[fs]) <= 0:
+                        error = processes_defrag[fs].communicate()[1]
+                        error_outputs[fs] += error if len(error) else "[no stderr output]"
+                        print("Error while defragmenting '{0}':\n{1}\n".format(fs, error_outputs[fs]))
+                elif fs not in processes_dedupe:
+                    continue_running = True
+                    processes_dedupe[fs] = Popen(["/usr/bin/duperemove", "-dr", fs], shell=False, stdout=DEVNULL, stderr=PIPE, encoding="utf8")
+                    print("Finished defragmenting '{0}', starting deduplication...".format(fs))
+                else:
+                    retcode = processes_dedupe[fs].poll()
+                    if retcode is None:
+                        continue_running = True
+                    elif retcode > 0:
+                        if not len(error_outputs[fs]):
+                            error = processes_dedupe[fs].communicate()[1]
+                            error_outputs[fs] += error if len(error) else "[no stderr output]"
+                            print("Error while deduplicating '{0}':\n{1}\n".format(fs, error_outputs[fs]))
+                    elif fs not in usage_after:
+                        usage_after[fs] = get_used_and_free(fs)
+                        print("Finished deduplicating '{0}'".format(fs))
+
+            if not continue_running:
+                break
+            sleep(5)
+
+        summary = StringIO()
+        success = all(map(lambda x: x.returncode == 0, list(processes_defrag.values()) + list(processes_dedupe.values())))
+
+        if success:
+            print_and_save("Defragmentation and deduplication on all btrfs drives has completed successfully.\n", dest=summary)
+        else:
+            print_and_save("Errors have been encountered while defragmenting and deduplicating btrfs drives.", dest=summary)
+            print_and_save("Following output has been collected:\n", dest=summary)
+            for fs, stderr in ({ k: v for k, v in error_outputs.items() if len(v) }).items():
+                print_and_save("* {0}:\n{1}\n".format(fs, stderr), dest=summary)
+
+        print_and_save("Changes to filesystem usage:", dest=summary)
+        for fs in filesystems:
+            if fs in usage_before and fs in usage_after:
+                print_and_save("* {0}:".format(fs), dest=summary)
+                print_and_save("  Used: {0} => {1}".format(usage_before[fs]["used"], usage_after[fs]["used"]), dest=summary)
+                print_and_save("  Free: {0} => {1}".format(usage_before[fs]["free"], usage_after[fs]["free"]), dest=summary)
+
+        print("\nSending ending ping to healthchecks.io...")
+        send_ping("{0}{1}".format(HEALTHCHECKS_URL, "/fail" if not success else ""), summary.getvalue().strip())
+
+    except Exception as e:
+        error_summary = StringIO()
+        print("Unexpected error has occurred during defragmentation and deduplication:\n", file=error_summary)
+        print_exception(type(e), e, e.__traceback__, file=error_summary)
+        send_ping("{0}/fail".format(HEALTHCHECKS_URL), error_summary.getvalue().strip())
+        raise e

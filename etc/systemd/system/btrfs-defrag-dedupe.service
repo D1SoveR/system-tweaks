@@ -1,0 +1,10 @@
+[Unit]
+Description=Starts the defragmentation and deduplication for btrfs drives
+Requires=local-fs.target network-online.target
+After=local-fs.target network-online.target
+
+[Service]
+Type=oneshot
+# This ensures that the output from the script appears in the journal on time
+Environment="PYTHONUNBUFFERED=1"
+ExecStart=/usr/local/bin/btrfs-defrag-dedupe
